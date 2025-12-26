@@ -1,116 +1,253 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, Image, TouchableOpacity, SafeAreaView, StatusBar } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, ScrollView, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator, StatusBar } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useAuth } from '../../lib/AuthContext';
+import { supabase } from '../../lib/supabase';
 
-// Dados Mockados dos Jogadores
-const PLAYERS = [
-  { id: 1, name: 'Rafael (Host)', role: 'Host', image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=200' },
-  { id: 2, name: 'Ana Souza', role: 'Confirmado', image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=200' },
-  { id: 3, name: 'Vaga Livre', role: 'Disponível', image: null },
-  { id: 4, name: 'Vaga Livre', role: 'Disponível', image: null },
-];
+const GameDetailsScreen = ({ route, navigation }) => {
+  const { game } = route.params; 
+  const { user } = useAuth();
+  
+  const [loading, setLoading] = useState(false);
+  const [isJoined, setIsJoined] = useState(false);
+  const [participants, setParticipants] = useState([]);
+  const [hostName, setHostName] = useState("Carregando...");
 
-const PlayerCircle = ({ player }) => (
-  <View className="items-center mr-4">
-    {player.image ? (
-      <Image source={{ uri: player.image }} className="w-16 h-16 rounded-full border-2 border-primary" />
-    ) : (
-      <View className="w-16 h-16 rounded-full bg-surface-dark border-2 border-dashed border-gray-600 items-center justify-center">
-        <MaterialIcons name="add" size={24} color="#6b6b60" />
-      </View>
-    )}
-    <Text className="text-white text-xs mt-2 font-medium">{player.name.split(' ')[0]}</Text>
-    <Text className="text-gray-500 text-[10px] uppercase">{player.role}</Text>
-  </View>
-);
+  const isHost = user?.id === game.host_id;
 
-const GameDetailsScreen = ({ navigation, route }) => {
-  // Recebe dados da tela anterior (se houver) ou usa defaults
-  const { title = "Parque Ibirapuera", date = "Amanhã, 08:00" } = route.params || {};
-  const [status, setStatus] = useState('idle'); // idle, requesting, confirmed
+  useEffect(() => {
+    fetchParticipants();
+    fetchHostProfile();
+  }, []);
 
-  const handleJoin = () => {
-    setStatus('requesting');
-    // Aqui viria a lógica de backend
-    setTimeout(() => setStatus('confirmed'), 1500); // Simula aprovação
+  const fetchParticipants = async () => {
+    try {
+      // Agora essa query vai funcionar porque criamos a relação no SQL
+      const { data, error } = await supabase
+        .from('game_participants')
+        .select('user_id, profiles(full_name, avatar_url)')
+        .eq('game_id', game.id);
+
+      if (error) throw error;
+
+      // Verifica se EU estou na lista
+      const amIIn = data.some(p => p.user_id === user.id);
+      setIsJoined(amIIn);
+      setParticipants(data);
+    } catch (error) {
+      console.log("Erro participants:", error);
+    }
+  };
+
+  const fetchHostProfile = async () => {
+    try {
+        const { data } = await supabase.from('profiles').select('full_name').eq('id', game.host_id).single();
+        if (data) setHostName(data.full_name);
+    } catch (e) {}
+  };
+
+  // --- Ações ---
+
+  const handleJoin = async () => {
+    setLoading(true);
+    try {
+        const { error } = await supabase.from('game_participants').insert([
+            { game_id: game.id, user_id: user.id }
+        ]);
+        if (error) throw error;
+        Alert.alert("Sucesso", "Você entrou no jogo! 🎾");
+        fetchParticipants(); 
+    } catch (error) {
+        Alert.alert("Erro", error.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleLeave = async () => {
+    setLoading(true);
+    try {
+        const { error } = await supabase
+            .from('game_participants')
+            .delete()
+            .eq('game_id', game.id)
+            .eq('user_id', user.id);
+        
+        if (error) throw error;
+        Alert.alert("Saiu", "Você saiu da partida.");
+        fetchParticipants();
+        setIsJoined(false);
+    } catch (error) {
+        Alert.alert("Erro", error.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleDeleteGame = async () => {
+      Alert.alert(
+          "Cancelar Partida", 
+          "Tem certeza? O jogo será apagado para todos.", 
+          [
+             { text: "Não", style: "cancel" },
+             { 
+               text: "Sim, excluir", 
+               style: "destructive", 
+               onPress: async () => {
+                  try {
+                      const { error } = await supabase.from('games').delete().eq('id', game.id);
+                      if (error) throw error;
+                      navigation.goBack();
+                  } catch (e) {
+                      Alert.alert("Erro", "Não foi possível excluir: " + e.message);
+                  }
+               }
+             }
+          ]
+      );
+  };
+
+  const handleManage = () => {
+      Alert.alert("Gerenciar Jogo", "Em breve você poderá editar data, local e aprovar jogadores aqui.");
   };
 
   return (
     <View className="flex-1 bg-background-dark">
-      <StatusBar barStyle="light-content" />
-      
-      {/* Imagem de Capa */}
-      <View className="h-64 w-full relative">
-        <Image 
-          source={{ uri: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80' }} 
-          className="w-full h-full opacity-80"
-          resizeMode="cover"
-        />
-        <View className="absolute inset-0 bg-gradient-to-t from-background-dark to-transparent" />
-        
-        <SafeAreaView className="absolute top-0 w-full px-4 pt-2">
-          <TouchableOpacity onPress={() => navigation.goBack()} className="w-10 h-10 rounded-full bg-black/40 items-center justify-center backdrop-blur-md">
-            <MaterialIcons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
-        </SafeAreaView>
+      <StatusBar barStyle="light-content" translucent />
+
+      {/* HEADER FIXO */}
+      <SafeAreaView className="absolute top-0 left-0 w-full z-50">
+         <View className="px-4 pt-2 flex-row justify-between items-center">
+             <TouchableOpacity 
+                onPress={() => navigation.goBack()} 
+                className="w-10 h-10 bg-black/40 rounded-full items-center justify-center backdrop-blur-md"
+             >
+                 <MaterialIcons name="arrow-back" size={24} color="white" />
+             </TouchableOpacity>
+
+             {isHost && (
+                 <TouchableOpacity 
+                    onPress={handleDeleteGame} 
+                    className="w-10 h-10 bg-red-500/80 rounded-full items-center justify-center shadow-lg"
+                 >
+                     <MaterialIcons name="delete" size={24} color="white" />
+                 </TouchableOpacity>
+             )}
+         </View>
+      </SafeAreaView>
+
+      {/* Imagem de Fundo */}
+      <View className="h-72 w-full relative">
+         <Image 
+            source={{ uri: game.image_url || 'https://images.unsplash.com/photo-1622163642998-1ea36b1ad565?q=80' }} 
+            className="w-full h-full"
+         />
+         <View className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-background-dark" />
       </View>
 
-      <View className="flex-1 px-5 -mt-8">
-        <View className="bg-surface-dark p-5 rounded-2xl shadow-lg border border-white/5">
-            <Text className="text-primary text-sm font-bold uppercase tracking-wider mb-1">Partida Amistosa</Text>
-            <Text className="text-white text-2xl font-display font-bold leading-tight">{title}</Text>
-            
-            <View className="flex-row items-center gap-2 mt-3">
-               <MaterialIcons name="calendar-today" size={16} color="#8c8b5f" />
-               <Text className="text-gray-300">{date}</Text>
+      {/* Conteúdo */}
+      <ScrollView className="flex-1 -mt-10 px-6" showsVerticalScrollIndicator={false}>
+         
+         <View className="mb-6">
+            <View className="flex-row items-center gap-2 mb-2">
+                <View className="bg-primary px-3 py-1 rounded-full self-start">
+                    <Text className="text-black font-bold text-xs uppercase">{game.level}</Text>
+                </View>
+                <View className="bg-surface-dark px-3 py-1 rounded-full self-start border border-white/10">
+                    <Text className="text-white font-bold text-xs uppercase">{game.mode === 'double' ? 'Duplas' : 'Simples'}</Text>
+                </View>
             </View>
-            <View className="flex-row items-center gap-2 mt-2">
-               <MaterialIcons name="location-on" size={16} color="#8c8b5f" />
-               <Text className="text-gray-300">Quadra 3 • Cimento (Rápida)</Text>
+            <Text className="text-white text-3xl font-display font-bold leading-tight">{game.title}</Text>
+            <View className="flex-row items-center mt-2 opacity-80">
+                <MaterialIcons name="location-on" size={18} color="#f9f506" />
+                <Text className="text-gray-300 text-base ml-1">{game.location}</Text>
             </View>
-        </View>
+         </View>
 
-        <ScrollView className="mt-6" showsVerticalScrollIndicator={false}>
-           <Text className="text-white text-lg font-bold mb-4">Jogadores (2/4)</Text>
-           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="pb-4">
-              {PLAYERS.map(p => <PlayerCircle key={p.id} player={p} />)}
-           </ScrollView>
+         <View className="flex-row items-center mb-6 bg-surface-dark p-3 rounded-2xl border border-white/5">
+            <Image source={{ uri: `https://api.dicebear.com/7.x/initials/png?seed=${hostName}` }} className="w-12 h-12 rounded-full bg-gray-700" />
+            <View className="ml-3 flex-1">
+                <Text className="text-white font-bold text-base">{hostName}</Text>
+                <Text className="text-primary text-xs font-bold">ORGANIZADOR</Text>
+            </View>
+            <TouchableOpacity 
+                className="bg-white/10 p-2.5 rounded-full"
+                // ENVIAMOS O ID DO JOGO E O TÍTULO
+                onPress={() => navigation.navigate('Chat', { gameId: game.id, title: game.title })}
+            >
+                <MaterialIcons name="chat-bubble" size={20} color="white" />
+            </TouchableOpacity>
+         </View>
 
-           <View className="h-[1px] bg-gray-800 my-4" />
+         <View className="flex-row gap-3 mb-8">
+            <View className="flex-1 bg-surface-dark p-4 rounded-2xl border border-white/5 items-center justify-center">
+                <MaterialIcons name="event" size={24} color="#f9f506" />
+                <Text className="text-white font-bold mt-2">{game.date.split(' - ')[0] || '14/07'}</Text>
+                <Text className="text-gray-500 text-xs uppercase tracking-wider mt-1">Data</Text>
+            </View>
+            <View className="flex-1 bg-surface-dark p-4 rounded-2xl border border-white/5 items-center justify-center">
+                <MaterialIcons name="schedule" size={24} color="#f9f506" />
+                <Text className="text-white font-bold mt-2">{game.date.split(' - ')[1] || '09:00'}</Text>
+                <Text className="text-gray-500 text-xs uppercase tracking-wider mt-1">Horário</Text>
+            </View>
+         </View>
 
-           <Text className="text-white text-lg font-bold mb-2">Sobre o Jogo</Text>
-           <Text className="text-gray-400 leading-relaxed font-body">
-             Olá pessoal! Buscamos mais 2 jogadores nível intermediário para fechar uma dupla. 
-             O clima é amigável, mas gostamos de jogar valendo os pontos. Temos bolas novas!
-           </Text>
-           
-           <View className="h-24" /> 
-        </ScrollView>
-      </View>
+         <View className="mb-32">
+            <View className="flex-row justify-between items-end mb-4">
+                <Text className="text-white font-bold text-xl">Jogadores</Text>
+                <Text className="text-gray-400 text-sm">{participants.length} / {game.mode === 'double' ? 4 : 2} confirmados</Text>
+            </View>
+
+            {participants.length === 0 ? (
+                <View className="bg-surface-dark p-6 rounded-2xl items-center border border-white/5 border-dashed">
+                    <Text className="text-gray-500 text-center">Ainda ninguém confirmou.{'\n'}Seja o primeiro!</Text>
+                </View>
+            ) : (
+                participants.map((p, index) => (
+                    <View key={index} className="flex-row items-center mb-3 bg-surface-dark p-3 rounded-xl border border-white/5">
+                         <Image source={{ uri: `https://api.dicebear.com/7.x/initials/png?seed=${p.profiles?.full_name || 'U'}` }} className="w-10 h-10 rounded-full border border-gray-600" />
+                         <Text className="text-white ml-3 font-medium flex-1">{p.profiles?.full_name || 'Usuário'}</Text>
+                         {p.user_id === game.host_id && (
+                             <View className="bg-primary/20 px-2 py-1 rounded">
+                                 <Text className="text-primary text-[10px] font-bold">HOST</Text>
+                             </View>
+                         )}
+                    </View>
+                ))
+            )}
+         </View>
+      </ScrollView>
 
       {/* Footer Fixo */}
-      <View className="absolute bottom-0 w-full bg-surface-dark border-t border-gray-800 p-5 pb-8">
-         <TouchableOpacity 
-           onPress={handleJoin}
-           disabled={status !== 'idle'}
-           className={`w-full py-4 rounded-full flex-row items-center justify-center gap-2 shadow-lg transition-all
-             ${status === 'confirmed' ? 'bg-green-500' : (status === 'requesting' ? 'bg-gray-600' : 'bg-primary')}
-           `}
-         >
-            {status === 'idle' && (
-              <>
-                <Text className="text-black font-bold text-lg">Pedir para Participar</Text>
-                <MaterialIcons name="front-hand" size={20} color="black" />
-              </>
-            )}
-            {status === 'requesting' && <Text className="text-white font-bold text-lg">Enviando pedido...</Text>}
-            {status === 'confirmed' && (
-              <>
-                <Text className="text-white font-bold text-lg">Você está no jogo!</Text>
-                <MaterialIcons name="check" size={20} color="white" />
-              </>
-            )}
-         </TouchableOpacity>
+      <View className="absolute bottom-0 left-0 right-0 p-5 pt-10 bg-gradient-to-t from-background-dark via-background-dark to-transparent">
+        {isHost ? (
+            <TouchableOpacity 
+                onPress={handleManage}
+                className="w-full h-14 bg-surface-dark border border-white/20 rounded-full items-center justify-center active:bg-gray-800"
+            >
+                <Text className="text-white font-bold text-lg">Gerenciar Jogo</Text>
+            </TouchableOpacity>
+        ) : (
+            <TouchableOpacity 
+                onPress={isJoined ? handleLeave : handleJoin}
+                disabled={loading}
+                className={`w-full h-14 rounded-full items-center justify-center shadow-lg ${
+                    isJoined ? 'bg-red-500/10 border border-red-500' : 'bg-primary'
+                }`}
+            >
+                {loading ? (
+                    <ActivityIndicator color={isJoined ? "red" : "black"} />
+                ) : (
+                    // CORREÇÃO: Usar View em vez de Fragment <>
+                    <View className="flex-row items-center gap-2">
+                        <Text className={`font-bold text-lg ${isJoined ? 'text-red-500' : 'text-black'}`}>
+                            {isJoined ? "Sair do Jogo" : "Confirmar Presença"}
+                        </Text>
+                        {!isJoined && <MaterialIcons name="check-circle" size={24} color="black" />}
+                    </View>
+                )}
+            </TouchableOpacity>
+        )}
       </View>
     </View>
   );

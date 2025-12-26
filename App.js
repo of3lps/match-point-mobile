@@ -8,22 +8,28 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useFonts, SplineSans_700Bold, SplineSans_600SemiBold, SplineSans_400Regular } from '@expo-google-fonts/spline-sans';
 import { NotoSans_400Regular, NotoSans_700Bold, NotoSans_500Medium } from '@expo-google-fonts/noto-sans';
 
+// Contexto de Autenticação
+import { AuthProvider, useAuth } from './src/lib/AuthContext';
+
 // Auth
 import LoginScreen from './src/screens/auth/LoginScreen';
 
-// Onboarding
+// Onboarding (Cadastro de Perfil)
 import OnboardingLevel from './src/screens/onboarding/OnboardingLevel';
 import OnboardingGoals from './src/screens/onboarding/OnboardingGoals';
 import OnboardingSchedule from './src/screens/onboarding/OnboardingSchedule';
 
-// Main
+// Main (App Principal)
 import HomeScreen from './src/screens/main/HomeScreen';
 import CreateGameScreen from './src/screens/main/CreateGameScreen';
 import ProfileScreen from './src/screens/main/ProfileScreen';
 import SearchScreen from './src/screens/main/SearchScreen';
 import MessagesListScreen from './src/screens/main/MessagesListScreen';
-import ChatScreen from './src/screens/main/ChatScreen';
 import GameDetailsScreen from './src/screens/main/GameDetailsScreen';
+import ChatScreen from './src/screens/main/ChatScreen';
+
+// --- NOVO IMPORT ---
+import EditProfileScreen from './src/screens/main/EditProfileScreen';
 
 // Booking
 import ClubDetailsScreen from './src/screens/booking/ClubDetailsScreen';
@@ -31,6 +37,7 @@ import ClubDetailsScreen from './src/screens/booking/ClubDetailsScreen';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+// --- TABS (MENU INFERIOR) ---
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -86,6 +93,66 @@ function MainTabs() {
   );
 }
 
+// --- NAVEGAÇÃO PRINCIPAL ---
+const RootNavigator = () => {
+  const { user, profile, loading } = useAuth(); 
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#23220f', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#f9f506" />
+      </View>
+    );
+  }
+
+  return (
+    <NavigationContainer>
+      <StatusBar style="light" backgroundColor="#23220f" translucent={false} />
+      
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+        
+        {user ? (
+          // --- USUÁRIO LOGADO ---
+          <Stack.Group>
+            {/* Se o perfil estiver incompleto, vai para Onboarding */}
+            {(!profile || !profile.full_name) ? (
+               <>
+                 <Stack.Screen name="OnboardingLevel" component={OnboardingLevel} />
+                 <Stack.Screen name="OnboardingGoals" component={OnboardingGoals} />
+                 <Stack.Screen name="OnboardingSchedule" component={OnboardingSchedule} />
+                 <Stack.Screen name="Main" component={MainTabs} />
+               </>
+            ) : (
+               // Se completo, vai para Main
+               <>
+                 <Stack.Screen name="Main" component={MainTabs} />
+               </>
+            )}
+
+            {/* Telas Comuns acessíveis para logados */}
+            <Stack.Screen name="ClubDetails" component={ClubDetailsScreen} />
+            <Stack.Screen name="GameDetails" component={GameDetailsScreen} />
+            <Stack.Screen name="Chat" component={ChatScreen} />
+
+            {/* --- TELA DE EDIÇÃO (MODAL) --- */}
+            <Stack.Screen 
+                name="EditProfile" 
+                component={EditProfileScreen} 
+                options={{ presentation: 'modal', animation: 'slide_from_bottom' }} 
+            />
+
+          </Stack.Group>
+
+        ) : (
+          // --- USUÁRIO DESLOGADO ---
+          <Stack.Screen name="Login" component={LoginScreen} />
+        )}
+
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+};
+
 export default function App() {
   let [fontsLoaded] = useFonts({
     SplineSans_700Bold, SplineSans_600SemiBold, SplineSans_400Regular,
@@ -95,18 +162,8 @@ export default function App() {
   if (!fontsLoaded) return <ActivityIndicator size="large" color="#f9f506" />;
 
   return (
-    <NavigationContainer>
-      <StatusBar style="light" backgroundColor="#23220f" translucent={false} />
-      <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="OnboardingLevel" component={OnboardingLevel} />
-        <Stack.Screen name="OnboardingGoals" component={OnboardingGoals} />
-        <Stack.Screen name="OnboardingSchedule" component={OnboardingSchedule} />
-        <Stack.Screen name="Main" component={MainTabs} />
-        <Stack.Screen name="ClubDetails" component={ClubDetailsScreen} />
-        <Stack.Screen name="GameDetails" component={GameDetailsScreen} />
-        <Stack.Screen name="Chat" component={ChatScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <AuthProvider>
+       <RootNavigator />
+    </AuthProvider>
   );
 }

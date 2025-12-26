@@ -1,116 +1,117 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, SafeAreaView, ScrollView } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { View, Text, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
-const DayButton = ({ day, active, onPress }) => (
-  <TouchableOpacity 
-    onPress={onPress}
-    className={`h-12 w-12 rounded-full items-center justify-center mr-2 relative
-      ${active ? 'bg-primary' : 'bg-surface-dark border border-gray-700'}
-    `}
-  >
-    <Text className={`text-xs font-bold uppercase ${active ? 'text-black' : 'text-gray-400'}`}>{day}</Text>
-    {active && <View className="absolute bottom-1.5 h-1 w-1 rounded-full bg-black" />}
-  </TouchableOpacity>
-);
+const PERIODS = ['Manhã', 'Tarde', 'Noite'];
+const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 
-const TimeCard = ({ icon, title, time, active, onPress }) => (
-  <TouchableOpacity 
-    onPress={onPress}
-    className={`flex-row items-center justify-between p-4 rounded-xl mb-3 border-2
-      ${active ? 'bg-surface-dark border-primary shadow-lg shadow-primary/10' : 'bg-surface-dark border-transparent'}
-    `}
-  >
-    <View className="flex-row items-center gap-4">
-       <View className={`w-12 h-12 rounded-full items-center justify-center ${active ? 'bg-primary' : 'bg-gray-800'}`}>
-          <MaterialIcons name={icon} size={24} color={active ? 'black' : '#6b6b60'} />
-       </View>
-       <View>
-          <Text className="text-white text-base font-bold">{title}</Text>
-          <Text className="text-gray-400 text-sm">{time}</Text>
-       </View>
-    </View>
-    {active && (
-       <View className="w-6 h-6 rounded-full bg-primary items-center justify-center">
-          <MaterialIcons name="check" size={16} color="black" />
-       </View>
-    )}
-  </TouchableOpacity>
-);
+const OnboardingSchedule = ({ navigation }) => {
+  const { user } = useAuth();
+  // Estado simples: quais dias/períodos estão marcados.
+  // Ex: { 'Seg-Noite': true, 'Sáb-Manhã': true }
+  const [availability, setAvailability] = useState({});
+  const [loading, setLoading] = useState(false);
 
-export default function OnboardingSchedule({ navigation }) {
-  const [selectedDays, setSelectedDays] = useState(['M', 'W', 'F']);
-  const [selectedTimes, setSelectedTimes] = useState(['afternoon', 'evening']);
-
-  const toggleDay = (day) => {
-    if (selectedDays.includes(day)) setSelectedDays(selectedDays.filter(d => d !== day));
-    else setSelectedDays([...selectedDays, day]);
+  const toggleSlot = (day, period) => {
+    const key = `${day}-${period}`;
+    setAvailability(prev => {
+      const newState = { ...prev };
+      if (newState[key]) delete newState[key];
+      else newState[key] = true;
+      return newState;
+    });
   };
 
-  const toggleTime = (time) => {
-    if (selectedTimes.includes(time)) setSelectedTimes(selectedTimes.filter(t => t !== time));
-    else setSelectedTimes([...selectedTimes, time]);
+  const handleFinish = async () => {
+    setLoading(true);
+    try {
+      if (user) {
+        // Salva a disponibilidade como JSON
+        const { error } = await supabase
+          .from('profiles')
+          .update({ availability: availability })
+          .eq('id', user.id);
+
+        if (error) throw error;
+      }
+      
+      // SUCESSO FINAL: Redireciona para a Home e limpa o histórico de navegação
+      // O App.js já saberia fazer isso por estar logado, mas aqui forçamos a navegação
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Main' }],
+      });
+
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível finalizar seu cadastro.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <SafeAreaView className="flex-1 bg-background-dark">
-      <View className="flex-1 px-6 pt-6">
-        {/* Barra de Progresso */}
-        <View className="flex-row items-center justify-start gap-2 mb-8">
-            <View className="h-2 w-2 rounded-full bg-gray-700" />
-            <View className="h-2 w-2 rounded-full bg-gray-700" />
-            <View className="h-2 w-8 rounded-full bg-primary" />
+      <ScrollView className="flex-1 px-4 pt-10 pb-24">
+        {/* Barra de Progresso (3/3) */}
+        <View className="flex-row h-1 bg-gray-800 rounded-full mb-8 mx-2">
+           <View className="w-full h-full bg-primary rounded-full" />
         </View>
 
-        <Text className="text-white text-4xl font-bold mb-2">Sua Agenda</Text>
-        <Text className="text-gray-400 mb-8">Selecione dias e horários que você costuma estar livre.</Text>
+        <Text className="text-white text-3xl font-display font-bold mb-2 px-2">Disponibilidade</Text>
+        <Text className="text-gray-400 font-body mb-6 px-2">Quando você costuma jogar?</Text>
 
-        <View className="mb-8">
-           <View className="flex-row justify-between items-end mb-4">
-              <Text className="text-white text-lg font-bold">Dias da semana</Text>
-              <Text className="text-primary text-xs font-bold underline">Finais de Semana</Text>
-           </View>
-           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
-                 <DayButton 
-                    key={i} 
-                    day={day} 
-                    active={selectedDays.includes(day)} 
-                    onPress={() => toggleDay(day)}
-                 />
-              ))}
-           </ScrollView>
+        {/* Grade de Horários */}
+        <View className="bg-surface-dark rounded-2xl p-4 border border-white/5">
+          <View className="flex-row mb-4 border-b border-white/10 pb-2">
+             <View className="w-12" /> 
+             {PERIODS.map(p => (
+               <Text key={p} className="flex-1 text-center text-gray-400 text-xs font-bold uppercase">{p}</Text>
+             ))}
+          </View>
+
+          {WEEKDAYS.map((day) => (
+            <View key={day} className="flex-row items-center mb-4 last:mb-0">
+               <Text className="w-12 text-white font-bold">{day}</Text>
+               {PERIODS.map((period) => {
+                 const isSelected = availability[`${day}-${period}`];
+                 return (
+                   <TouchableOpacity 
+                      key={period} 
+                      onPress={() => toggleSlot(day, period)}
+                      className="flex-1 items-center justify-center"
+                   >
+                      <View className={`w-8 h-8 rounded-full border items-center justify-center ${
+                        isSelected ? 'bg-primary border-primary' : 'bg-transparent border-gray-700'
+                      }`}>
+                         {isSelected && <View className="w-3 h-3 bg-black rounded-full" />}
+                      </View>
+                   </TouchableOpacity>
+                 );
+               })}
+            </View>
+          ))}
         </View>
 
-        <View>
-           <Text className="text-white text-lg font-bold mb-4">Período do dia</Text>
-           <TimeCard 
-              icon="wb-twilight" title="Manhã" time="06:00 - 12:00" 
-              active={selectedTimes.includes('morning')} 
-              onPress={() => toggleTime('morning')}
-           />
-           <TimeCard 
-              icon="wb-sunny" title="Tarde" time="12:00 - 18:00" 
-              active={selectedTimes.includes('afternoon')} 
-              onPress={() => toggleTime('afternoon')}
-           />
-           <TimeCard 
-              icon="nights-stay" title="Noite" time="18:00 - 23:00" 
-              active={selectedTimes.includes('evening')} 
-              onPress={() => toggleTime('evening')}
-           />
-        </View>
+        <Text className="text-center text-gray-500 text-xs mt-6 px-4">
+          Você poderá alterar isso depois no seu perfil.
+        </Text>
+      </ScrollView>
 
-        <View className="mt-auto pb-8">
-           <TouchableOpacity 
-             onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Main' }] })}
-             className="w-full h-14 bg-primary rounded-full flex-row items-center justify-center gap-2"
-           >
-             <Text className="text-black text-lg font-bold">Encontrar Jogos</Text>
-             <MaterialIcons name="sports-tennis" size={20} color="black" />
-           </TouchableOpacity>
-        </View>
+      {/* Footer */}
+      <View className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-dark via-background-dark to-transparent">
+        <TouchableOpacity
+          onPress={handleFinish}
+          disabled={loading}
+          className="w-full h-14 bg-primary rounded-full items-center justify-center shadow-lg"
+        >
+          {loading ? <ActivityIndicator color="black" /> : (
+             <Text className="text-black font-bold text-lg">Finalizar Cadastro</Text>
+          )}
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
-}
+};
+
+export default OnboardingSchedule;

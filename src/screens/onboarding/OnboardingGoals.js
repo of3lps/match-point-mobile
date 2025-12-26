@@ -1,87 +1,105 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
-const GoalCard = ({ title, subtitle, icon, image, value, selected, onSelect }) => (
-  <TouchableOpacity 
-    onPress={() => onSelect(value)}
-    className={`flex-row items-center justify-between p-4 rounded-xl mb-4 border-2 transition-all
-      ${selected ? 'bg-surface-dark border-primary shadow-lg shadow-primary/10' : 'bg-surface-dark border-transparent'}
-    `}
-  >
-    <View className="flex-1 pr-4">
-       <View className="flex-row items-center gap-2 mb-1">
-          <MaterialIcons name={icon} size={24} color="#f9f506" />
-          <Text className="text-white text-lg font-bold">{title}</Text>
-       </View>
-       <Text className="text-gray-400 text-sm">{subtitle}</Text>
-    </View>
-    <Image source={{ uri: image }} className="w-20 h-20 rounded-lg" />
-    
-    {selected && (
-       <View className="absolute -top-2 -right-2 bg-primary rounded-full p-1">
-          <MaterialIcons name="check" size={12} color="black" />
-       </View>
-    )}
-  </TouchableOpacity>
-);
+const GOALS = [
+  { id: 'casual', label: 'Jogar Casual', icon: 'mood' },
+  { id: 'competir', label: 'Competir / Rankings', icon: 'emoji-events' },
+  { id: 'treinar', label: 'Treinar Fundamentos', icon: 'fitness-center' },
+  { id: 'social', label: 'Fazer Amigos', icon: 'groups' },
+];
 
-export default function OnboardingGoals({ navigation }) {
-  const [goal, setGoal] = useState('training');
+const OnboardingGoals = ({ navigation }) => {
+  const { user } = useAuth();
+  const [selectedGoals, setSelectedGoals] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const toggleGoal = (id) => {
+    if (selectedGoals.includes(id)) {
+      setSelectedGoals(selectedGoals.filter(g => g !== id));
+    } else {
+      setSelectedGoals([...selectedGoals, id]);
+    }
+  };
+
+  const handleContinue = async () => {
+    if (selectedGoals.length === 0) return;
+    setLoading(true);
+
+    try {
+      if (user) {
+        // Salva o array de objetivos no Supabase
+        const { error } = await supabase
+          .from('profiles')
+          .update({ goals: selectedGoals })
+          .eq('id', user.id);
+
+        if (error) throw error;
+      }
+      navigation.navigate('OnboardingSchedule');
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível salvar seus objetivos.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-background-dark">
-      <View className="flex-1 px-6 pt-6">
-        {/* Barra de Progresso */}
-        <View className="flex-row items-center justify-start gap-2 mb-8">
-            <View className="h-2 w-2 rounded-full bg-gray-700" />
-            <View className="h-2 w-8 rounded-full bg-primary" />
-            <View className="h-2 w-2 rounded-full bg-gray-700" />
+      <View className="flex-1 px-6 pt-10">
+        {/* Barra de Progresso (2/3) */}
+        <View className="flex-row h-1 bg-gray-800 rounded-full mb-8">
+           <View className="w-2/3 h-full bg-primary rounded-full" />
         </View>
 
-        <Text className="text-white text-3xl font-bold mb-2">Defina seu objetivo</Text>
-        <Text className="text-gray-400 mb-8">O que você procura hoje?</Text>
+        <Text className="text-white text-3xl font-display font-bold mb-2">O que você busca?</Text>
+        <Text className="text-gray-400 font-body mb-8">Selecione quantos quiser.</Text>
 
-        <View>
-          <GoalCard 
-             title="Jogo Casual"
-             subtitle="Diversão sem compromisso."
-             icon="sentiment-satisfied"
-             image="https://images.unsplash.com/photo-1554068865-24131878f8ee?q=80"
-             value="casual"
-             selected={goal === 'casual'}
-             onSelect={setGoal}
-          />
-           <GoalCard 
-             title="Treino"
-             subtitle="Melhore sua técnica."
-             icon="fitness-center"
-             image="https://images.unsplash.com/photo-1615118266406-fa119842c544?q=80"
-             value="training"
-             selected={goal === 'training'}
-             onSelect={setGoal}
-          />
-           <GoalCard 
-             title="Competitivo"
-             subtitle="Valendo pontos e ranking."
-             icon="emoji-events"
-             image="https://images.unsplash.com/photo-1599586120429-48285b6a8a81?q=80"
-             value="competitive"
-             selected={goal === 'competitive'}
-             onSelect={setGoal}
-          />
+        <View className="flex-row flex-wrap gap-4">
+           {GOALS.map((goal) => {
+             const isSelected = selectedGoals.includes(goal.id);
+             return (
+               <TouchableOpacity
+                 key={goal.id}
+                 onPress={() => toggleGoal(goal.id)}
+                 className={`w-[47%] p-4 rounded-2xl border-2 h-32 justify-between ${
+                   isSelected ? 'bg-primary border-primary' : 'bg-surface-dark border-transparent'
+                 }`}
+               >
+                  <MaterialIcons name={goal.icon} size={28} color={isSelected ? 'black' : '#f9f506'} />
+                  <Text className={`font-bold text-base ${isSelected ? 'text-black' : 'text-white'}`}>
+                    {goal.label}
+                  </Text>
+                  {isSelected && (
+                    <View className="absolute top-2 right-2">
+                      <MaterialIcons name="check-circle" size={20} color="black" />
+                    </View>
+                  )}
+               </TouchableOpacity>
+             );
+           })}
         </View>
 
-        <View className="mt-auto pb-8">
-           <TouchableOpacity 
-             onPress={() => navigation.navigate('OnboardingSchedule')}
-             className="w-full h-14 bg-primary rounded-full flex-row items-center justify-center gap-2"
-           >
-             <Text className="text-black text-lg font-bold">Continuar</Text>
-             <MaterialIcons name="arrow-forward" size={20} color="black" />
-           </TouchableOpacity>
+        <View className="absolute bottom-10 left-6 right-6">
+          <TouchableOpacity
+            onPress={handleContinue}
+            disabled={selectedGoals.length === 0 || loading}
+            className={`w-full h-14 rounded-full items-center justify-center shadow-lg ${
+              selectedGoals.length > 0 ? 'bg-primary' : 'bg-gray-800'
+            }`}
+          >
+            {loading ? <ActivityIndicator color="black" /> : (
+               <Text className={`font-bold text-lg ${selectedGoals.length > 0 ? 'text-black' : 'text-gray-500'}`}>
+                 Continuar
+               </Text>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>
   );
-}
+};
+
+export default OnboardingGoals;
