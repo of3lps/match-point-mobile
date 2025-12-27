@@ -75,8 +75,9 @@ const ProfileScreen = ({ navigation }) => {
         <View className="items-center mt-4 mb-8">
           <View className="relative">
             <Image 
-              source={{ uri: `https://api.dicebear.com/7.x/initials/png?seed=${displayProfile?.full_name || 'User'}&backgroundColor=f9f506&textColor=000` }} 
-              className="w-28 h-28 rounded-full border-4 border-primary"
+              // Se tiver avatar_url no perfil, usa ela. Senão, usa o gerador aleatório.
+              source={{ uri: displayProfile?.avatar_url || `https://api.dicebear.com/7.x/initials/png?seed=${displayProfile?.full_name || 'User'}&backgroundColor=f9f506&textColor=000` }} 
+              className="w-28 h-28 rounded-full border-4 border-primary bg-gray-800"
             />
             
             {/* BOTÃO DE EDITAR: Agora funciona! */}

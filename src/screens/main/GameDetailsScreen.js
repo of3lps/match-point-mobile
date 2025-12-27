@@ -1,36 +1,64 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, Image, ScrollView, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator, StatusBar } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { useFocusEffect } from '@react-navigation/native'; // Importante para recarregar dados
 
 const GameDetailsScreen = ({ route, navigation }) => {
-  const { game } = route.params; 
+  const { game: initialGameData } = route.params; // Dados iniciais passados pela navegação
   const { user } = useAuth();
+  
+  // Usamos um estado local para os dados do jogo, para poder atualizar (ex: se mudar horário)
+  const [gameData, setGameData] = useState(initialGameData);
   
   const [loading, setLoading] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
   const [participants, setParticipants] = useState([]);
   const [hostName, setHostName] = useState("Carregando...");
 
-  const isHost = user?.id === game.host_id;
+  const isHost = user?.id === gameData.host_id;
 
-  useEffect(() => {
-    fetchParticipants();
-    fetchHostProfile();
-  }, []);
+  // Recarrega TUDO (detalhes do jogo + participantes) sempre que a tela ganha foco
+  useFocusEffect(
+    useCallback(() => {
+      fetchGameData();
+      fetchParticipants();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+  );
+
+  const fetchGameData = async () => {
+    try {
+        const { data, error } = await supabase
+            .from('games')
+            .select('*')
+            .eq('id', gameData.id)
+            .single();
+        
+        if (error) throw error;
+        if (data) setGameData(data); // Atualiza titulo, local, data na tela
+
+        // Atualiza o nome do host (caso tenha mudado, improvável mas seguro)
+        if (data && data.host_id) {
+            const { data: host } = await supabase.from('profiles').select('full_name').eq('id', data.host_id).single();
+            if (host) setHostName(host.full_name);
+        }
+
+    } catch (e) {
+        console.log("Erro ao atualizar dados do jogo:", e);
+    }
+  };
 
   const fetchParticipants = async () => {
     try {
-      // Agora essa query vai funcionar porque criamos a relação no SQL
       const { data, error } = await supabase
         .from('game_participants')
         .select('user_id, profiles(full_name, avatar_url)')
-        .eq('game_id', game.id);
+        .eq('game_id', gameData.id);
 
       if (error) throw error;
 
-      // Verifica se EU estou na lista
       const amIIn = data.some(p => p.user_id === user.id);
       setIsJoined(amIIn);
       setParticipants(data);
@@ -39,20 +67,13 @@ const GameDetailsScreen = ({ route, navigation }) => {
     }
   };
 
-  const fetchHostProfile = async () => {
-    try {
-        const { data } = await supabase.from('profiles').select('full_name').eq('id', game.host_id).single();
-        if (data) setHostName(data.full_name);
-    } catch (e) {}
-  };
-
   // --- Ações ---
 
   const handleJoin = async () => {
     setLoading(true);
     try {
         const { error } = await supabase.from('game_participants').insert([
-            { game_id: game.id, user_id: user.id }
+            { game_id: gameData.id, user_id: user.id }
         ]);
         if (error) throw error;
         Alert.alert("Sucesso", "Você entrou no jogo! 🎾");
@@ -70,7 +91,7 @@ const GameDetailsScreen = ({ route, navigation }) => {
         const { error } = await supabase
             .from('game_participants')
             .delete()
-            .eq('game_id', game.id)
+            .eq('game_id', gameData.id)
             .eq('user_id', user.id);
         
         if (error) throw error;
@@ -95,7 +116,7 @@ const GameDetailsScreen = ({ route, navigation }) => {
                style: "destructive", 
                onPress: async () => {
                   try {
-                      const { error } = await supabase.from('games').delete().eq('id', game.id);
+                      const { error } = await supabase.from('games').delete().eq('id', gameData.id);
                       if (error) throw error;
                       navigation.goBack();
                   } catch (e) {
@@ -108,7 +129,8 @@ const GameDetailsScreen = ({ route, navigation }) => {
   };
 
   const handleManage = () => {
-      Alert.alert("Gerenciar Jogo", "Em breve você poderá editar data, local e aprovar jogadores aqui.");
+      // Navega para a tela de gestão passando o ID
+      navigation.navigate('ManageGame', { gameId: gameData.id });
   };
 
   return (
@@ -139,7 +161,7 @@ const GameDetailsScreen = ({ route, navigation }) => {
       {/* Imagem de Fundo */}
       <View className="h-72 w-full relative">
          <Image 
-            source={{ uri: game.image_url || 'https://images.unsplash.com/photo-1622163642998-1ea36b1ad565?q=80' }} 
+            source={{ uri: gameData.image_url || 'https://images.unsplash.com/photo-1622163642998-1ea36b1ad565?q=80' }} 
             className="w-full h-full"
          />
          <View className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-background-dark" />
@@ -148,22 +170,24 @@ const GameDetailsScreen = ({ route, navigation }) => {
       {/* Conteúdo */}
       <ScrollView className="flex-1 -mt-10 px-6" showsVerticalScrollIndicator={false}>
          
+         {/* Título e Badges */}
          <View className="mb-6">
             <View className="flex-row items-center gap-2 mb-2">
                 <View className="bg-primary px-3 py-1 rounded-full self-start">
-                    <Text className="text-black font-bold text-xs uppercase">{game.level}</Text>
+                    <Text className="text-black font-bold text-xs uppercase">{gameData.level}</Text>
                 </View>
                 <View className="bg-surface-dark px-3 py-1 rounded-full self-start border border-white/10">
-                    <Text className="text-white font-bold text-xs uppercase">{game.mode === 'double' ? 'Duplas' : 'Simples'}</Text>
+                    <Text className="text-white font-bold text-xs uppercase">{gameData.mode === 'double' ? 'Duplas' : 'Simples'}</Text>
                 </View>
             </View>
-            <Text className="text-white text-3xl font-display font-bold leading-tight">{game.title}</Text>
+            <Text className="text-white text-3xl font-display font-bold leading-tight">{gameData.title}</Text>
             <View className="flex-row items-center mt-2 opacity-80">
                 <MaterialIcons name="location-on" size={18} color="#f9f506" />
-                <Text className="text-gray-300 text-base ml-1">{game.location}</Text>
+                <Text className="text-gray-300 text-base ml-1">{gameData.location}</Text>
             </View>
          </View>
 
+         {/* Host Card */}
          <View className="flex-row items-center mb-6 bg-surface-dark p-3 rounded-2xl border border-white/5">
             <Image source={{ uri: `https://api.dicebear.com/7.x/initials/png?seed=${hostName}` }} className="w-12 h-12 rounded-full bg-gray-700" />
             <View className="ml-3 flex-1">
@@ -172,30 +196,31 @@ const GameDetailsScreen = ({ route, navigation }) => {
             </View>
             <TouchableOpacity 
                 className="bg-white/10 p-2.5 rounded-full"
-                // ENVIAMOS O ID DO JOGO E O TÍTULO
-                onPress={() => navigation.navigate('Chat', { gameId: game.id, title: game.title })}
+                onPress={() => navigation.navigate('Chat', { gameId: gameData.id, title: gameData.title })}
             >
                 <MaterialIcons name="chat-bubble" size={20} color="white" />
             </TouchableOpacity>
          </View>
 
+         {/* Informações Grid */}
          <View className="flex-row gap-3 mb-8">
             <View className="flex-1 bg-surface-dark p-4 rounded-2xl border border-white/5 items-center justify-center">
                 <MaterialIcons name="event" size={24} color="#f9f506" />
-                <Text className="text-white font-bold mt-2">{game.date.split(' - ')[0] || '14/07'}</Text>
+                <Text className="text-white font-bold mt-2">{gameData.date.split(' - ')[0] || 'Data'}</Text>
                 <Text className="text-gray-500 text-xs uppercase tracking-wider mt-1">Data</Text>
             </View>
             <View className="flex-1 bg-surface-dark p-4 rounded-2xl border border-white/5 items-center justify-center">
                 <MaterialIcons name="schedule" size={24} color="#f9f506" />
-                <Text className="text-white font-bold mt-2">{game.date.split(' - ')[1] || '09:00'}</Text>
+                <Text className="text-white font-bold mt-2">{gameData.date.split(' - ')[1] || 'Hora'}</Text>
                 <Text className="text-gray-500 text-xs uppercase tracking-wider mt-1">Horário</Text>
             </View>
          </View>
 
+         {/* Lista de Participantes */}
          <View className="mb-32">
             <View className="flex-row justify-between items-end mb-4">
                 <Text className="text-white font-bold text-xl">Jogadores</Text>
-                <Text className="text-gray-400 text-sm">{participants.length} / {game.mode === 'double' ? 4 : 2} confirmados</Text>
+                <Text className="text-gray-400 text-sm">{participants.length} / {gameData.mode === 'double' ? 4 : 2} confirmados</Text>
             </View>
 
             {participants.length === 0 ? (
@@ -207,7 +232,7 @@ const GameDetailsScreen = ({ route, navigation }) => {
                     <View key={index} className="flex-row items-center mb-3 bg-surface-dark p-3 rounded-xl border border-white/5">
                          <Image source={{ uri: `https://api.dicebear.com/7.x/initials/png?seed=${p.profiles?.full_name || 'U'}` }} className="w-10 h-10 rounded-full border border-gray-600" />
                          <Text className="text-white ml-3 font-medium flex-1">{p.profiles?.full_name || 'Usuário'}</Text>
-                         {p.user_id === game.host_id && (
+                         {p.user_id === gameData.host_id && (
                              <View className="bg-primary/20 px-2 py-1 rounded">
                                  <Text className="text-primary text-[10px] font-bold">HOST</Text>
                              </View>
@@ -238,7 +263,6 @@ const GameDetailsScreen = ({ route, navigation }) => {
                 {loading ? (
                     <ActivityIndicator color={isJoined ? "red" : "black"} />
                 ) : (
-                    // CORREÇÃO: Usar View em vez de Fragment <>
                     <View className="flex-row items-center gap-2">
                         <Text className={`font-bold text-lg ${isJoined ? 'text-red-500' : 'text-black'}`}>
                             {isJoined ? "Sair do Jogo" : "Confirmar Presença"}

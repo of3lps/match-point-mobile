@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import * as ImagePicker from 'expo-image-picker';
 
 const LEVELS = [
   { id: 'iniciante', label: 'Iniciante (1.5 - 2.5)' },
@@ -12,34 +13,96 @@ const LEVELS = [
 ];
 
 const EditProfileScreen = ({ navigation }) => {
-  const { user, profile } = useAuth(); // Pega dados atuais do contexto
+  const { user, profile } = useAuth();
   
   const [fullName, setFullName] = useState('');
   const [hand, setHand] = useState('');
   const [tennisLevel, setTennisLevel] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  // Carrega os dados atuais quando a tela abre
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name || '');
       setHand(profile.play_hand || '');
       setTennisLevel(profile.tennis_level || '');
+      setAvatarUrl(profile.avatar_url);
     }
   }, [profile]);
+
+  // --- FUNÇÃO CORRIGIDA (VOLTANDO PARA O MODO SEGURO) ---
+  const pickImage = async () => {
+    try {
+      // 1. Solicita permissão
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert("Permissão necessária", "É necessário permitir o acesso à galeria nas configurações do seu celular.");
+        return;
+      }
+
+      // 2. Abre a galeria
+      // IMPORTANTE: Voltamos para 'MediaTypeOptions' para evitar o erro vermelho.
+      // Se aparecer um aviso amarelo no terminal, pode ignorar por enquanto.
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images, 
+        allowsEditing: false, 
+        quality: 0.7,
+      });
+
+      // 3. Verifica se escolheu algo
+      if (!result.canceled) {
+        uploadImage(result.assets[0].uri);
+      }
+      
+    } catch (error) {
+      Alert.alert("Erro ao abrir galeria", error.message);
+    }
+  };
+
+  // --- UPLOAD PARA O SUPABASE ---
+  const uploadImage = async (uri) => {
+    try {
+      setUploading(true);
+
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      const fileExt = uri.split('.').pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, blob);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      
+      setAvatarUrl(data.publicUrl);
+
+    } catch (error) {
+      Alert.alert("Erro no Upload", "Não foi possível enviar a imagem: " + error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!fullName.trim()) return Alert.alert("Erro", "O nome não pode ficar vazio.");
     
     setLoading(true);
     try {
-      // Atualiza no Supabase
       const { error } = await supabase
         .from('profiles')
         .update({
           full_name: fullName,
           play_hand: hand,
           tennis_level: tennisLevel,
+          avatar_url: avatarUrl,
           updated_at: new Date(),
         })
         .eq('id', user.id);
@@ -49,9 +112,6 @@ const EditProfileScreen = ({ navigation }) => {
       Alert.alert("Sucesso", "Perfil atualizado!");
       navigation.goBack();
       
-      // Dica: O AuthContext deve atualizar sozinho se estiver ouvindo mudanças, 
-      // ou a próxima vez que carregar a tela de perfil.
-
     } catch (error) {
       Alert.alert("Erro", error.message);
     } finally {
@@ -72,12 +132,27 @@ const EditProfileScreen = ({ navigation }) => {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
         <ScrollView className="flex-1 px-6 pt-6" showsVerticalScrollIndicator={false}>
           
-          {/* Foto (Visual apenas por enquanto) */}
+          {/* Seção de Foto */}
           <View className="items-center mb-8">
-             <View className="w-24 h-24 rounded-full bg-surface-dark border-2 border-dashed border-gray-600 items-center justify-center mb-2">
-                <MaterialIcons name="add-a-photo" size={32} color="gray" />
-             </View>
-             <Text className="text-primary text-xs font-bold">Alterar Foto (Em breve)</Text>
+             <TouchableOpacity 
+               onPress={pickImage} 
+               disabled={uploading}
+               className="relative"
+             >
+                <Image 
+                  source={{ uri: avatarUrl || `https://api.dicebear.com/7.x/initials/png?seed=${fullName}` }} 
+                  className="w-28 h-28 rounded-full border-4 border-surface-dark bg-gray-700"
+                />
+                
+                <View className="absolute bottom-0 right-0 bg-primary p-2 rounded-full border-2 border-background-dark">
+                   {uploading ? (
+                     <ActivityIndicator size="small" color="black" />
+                   ) : (
+                     <MaterialIcons name="camera-alt" size={20} color="black" />
+                   )}
+                </View>
+             </TouchableOpacity>
+             <Text className="text-gray-500 text-xs mt-3 font-medium">Toque para alterar a foto</Text>
           </View>
 
           {/* Nome */}
@@ -135,7 +210,7 @@ const EditProfileScreen = ({ navigation }) => {
         <View className="p-6 bg-background-dark border-t border-white/5">
           <TouchableOpacity
             onPress={handleSave}
-            disabled={loading}
+            disabled={loading || uploading}
             className="w-full h-14 bg-primary rounded-full items-center justify-center shadow-lg"
           >
             {loading ? <ActivityIndicator color="black" /> : (

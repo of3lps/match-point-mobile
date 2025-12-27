@@ -14,12 +14,12 @@ import { AuthProvider, useAuth } from './src/lib/AuthContext';
 // Auth
 import LoginScreen from './src/screens/auth/LoginScreen';
 
-// Onboarding (Cadastro de Perfil)
+// Onboarding
 import OnboardingLevel from './src/screens/onboarding/OnboardingLevel';
 import OnboardingGoals from './src/screens/onboarding/OnboardingGoals';
 import OnboardingSchedule from './src/screens/onboarding/OnboardingSchedule';
 
-// Main (App Principal)
+// Main
 import HomeScreen from './src/screens/main/HomeScreen';
 import CreateGameScreen from './src/screens/main/CreateGameScreen';
 import ProfileScreen from './src/screens/main/ProfileScreen';
@@ -28,8 +28,9 @@ import MessagesListScreen from './src/screens/main/MessagesListScreen';
 import GameDetailsScreen from './src/screens/main/GameDetailsScreen';
 import ChatScreen from './src/screens/main/ChatScreen';
 
-// --- NOVO IMPORT ---
+// Telas de Edição e Gestão (Modais)
 import EditProfileScreen from './src/screens/main/EditProfileScreen';
+import ManageGameScreen from './src/screens/main/ManageGameScreen'; // <--- Importado
 
 // Booking
 import ClubDetailsScreen from './src/screens/booking/ClubDetailsScreen';
@@ -37,7 +38,7 @@ import ClubDetailsScreen from './src/screens/booking/ClubDetailsScreen';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// --- TABS (MENU INFERIOR) ---
+// --- TABS ---
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -114,7 +115,6 @@ const RootNavigator = () => {
         {user ? (
           // --- USUÁRIO LOGADO ---
           <Stack.Group>
-            {/* Se o perfil estiver incompleto, vai para Onboarding */}
             {(!profile || !profile.full_name) ? (
                <>
                  <Stack.Screen name="OnboardingLevel" component={OnboardingLevel} />
@@ -123,21 +123,24 @@ const RootNavigator = () => {
                  <Stack.Screen name="Main" component={MainTabs} />
                </>
             ) : (
-               // Se completo, vai para Main
                <>
                  <Stack.Screen name="Main" component={MainTabs} />
                </>
             )}
 
-            {/* Telas Comuns acessíveis para logados */}
             <Stack.Screen name="ClubDetails" component={ClubDetailsScreen} />
             <Stack.Screen name="GameDetails" component={GameDetailsScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
 
-            {/* --- TELA DE EDIÇÃO (MODAL) --- */}
+            {/* Modais de Edição */}
             <Stack.Screen 
                 name="EditProfile" 
                 component={EditProfileScreen} 
+                options={{ presentation: 'modal', animation: 'slide_from_bottom' }} 
+            />
+            <Stack.Screen 
+                name="ManageGame" 
+                component={ManageGameScreen} 
                 options={{ presentation: 'modal', animation: 'slide_from_bottom' }} 
             />
 
