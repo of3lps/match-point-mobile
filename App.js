@@ -28,9 +28,11 @@ import MessagesListScreen from './src/screens/main/MessagesListScreen';
 import GameDetailsScreen from './src/screens/main/GameDetailsScreen';
 import ChatScreen from './src/screens/main/ChatScreen';
 
-// Telas de Edição e Gestão (Modais)
+// Modais e Telas Extras
 import EditProfileScreen from './src/screens/main/EditProfileScreen';
-import ManageGameScreen from './src/screens/main/ManageGameScreen'; // <--- Importado
+import ManageGameScreen from './src/screens/main/ManageGameScreen';
+import ReviewScreen from './src/screens/main/ReviewScreen';
+import UserProfileScreen from './src/screens/main/UserProfileScreen'; // <--- IMPORTADO
 
 // Booking
 import ClubDetailsScreen from './src/screens/booking/ClubDetailsScreen';
@@ -128,11 +130,15 @@ const RootNavigator = () => {
                </>
             )}
 
+            {/* Telas de Navegação Comum */}
             <Stack.Screen name="ClubDetails" component={ClubDetailsScreen} />
             <Stack.Screen name="GameDetails" component={GameDetailsScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
+            
+            {/* --- ADICIONADO: Perfil Público --- */}
+            <Stack.Screen name="UserProfile" component={UserProfileScreen} />
 
-            {/* Modais de Edição */}
+            {/* Modais */}
             <Stack.Screen 
                 name="EditProfile" 
                 component={EditProfileScreen} 
@@ -141,6 +147,11 @@ const RootNavigator = () => {
             <Stack.Screen 
                 name="ManageGame" 
                 component={ManageGameScreen} 
+                options={{ presentation: 'modal', animation: 'slide_from_bottom' }} 
+            />
+            <Stack.Screen 
+                name="Review" 
+                component={ReviewScreen} 
                 options={{ presentation: 'modal', animation: 'slide_from_bottom' }} 
             />
 
