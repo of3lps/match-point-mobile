@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, SafeAreaView, Aler
 import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import DateTimePickerModal from "react-native-modal-datetime-picker"; // <--- BIBLIOTECA NOVA
 
 // Opções de Nível
 const LEVELS = ['iniciante', 'intermediario', 'avancado', 'profissional'];
@@ -13,27 +14,57 @@ const CreateGameScreen = ({ navigation }) => {
   // Estados do Formulário
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
-  const [date, setDate] = useState('');     // Ex: "14/07"
-  const [time, setTime] = useState('');     // Ex: "19:00"
-  const [level, setLevel] = useState('intermediario');
-  const [mode, setMode] = useState('single'); // 'single' ou 'double'
   
-  // NOVO ESTADO: O Host vai jogar?
-  const [isParticipating, setIsParticipating] = useState(true);
+  // --- NOVOS ESTADOS DE DATA (OBJETOS DATE) ---
+  const [date, setDate] = useState(new Date());
+  const [time, setTime] = useState(new Date());
+  
+  const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
+  const [isTimePickerVisible, setTimePickerVisibility] = useState(false);
+  // --------------------------------------------
 
+  const [level, setLevel] = useState('intermediario');
+  const [mode, setMode] = useState('single'); 
+  const [isParticipating, setIsParticipating] = useState(true);
   const [loading, setLoading] = useState(false);
 
+  // --- HANDLERS DOS PICKERS ---
+  const showDatePicker = () => setDatePickerVisibility(true);
+  const hideDatePicker = () => setDatePickerVisibility(false);
+  const handleConfirmDate = (selectedDate) => {
+    setDate(selectedDate);
+    hideDatePicker();
+  };
+
+  const showTimePicker = () => setTimePickerVisibility(true);
+  const hideTimePicker = () => setTimePickerVisibility(false);
+  const handleConfirmTime = (selectedTime) => {
+    setTime(selectedTime);
+    hideTimePicker();
+  };
+
+  // Funções de formatação visual
+  const formatDateVisual = (d) => d.toLocaleDateString('pt-BR');
+  const formatTimeVisual = (d) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
   const handleCreateGame = async () => {
-    // 1. Validação simples
-    if (!title || !location || !date || !time) {
-      return Alert.alert("Campos obrigatórios", "Por favor preencha todas as informações.");
+    if (!title || !location) {
+      return Alert.alert("Campos obrigatórios", "Por favor preencha o título e o local.");
     }
 
     setLoading(true);
 
     try {
-      // 2. Cria o Jogo na tabela GAMES
-      // IMPORTANTE: .select().single() retorna os dados do jogo criado (precisamos do ID)
+      // 1. FORMATAR DATA PARA O BANCO (DD/MM/YYYY - HH:mm)
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
+      const hours = time.getHours().toString().padStart(2, '0');
+      const minutes = time.getMinutes().toString().padStart(2, '0');
+
+      const finalDateString = `${day}/${month}/${year} - ${hours}:${minutes}`;
+
+      // 2. Cria o Jogo
       const { data: newGame, error: gameError } = await supabase
         .from('games')
         .insert([
@@ -41,10 +72,10 @@ const CreateGameScreen = ({ navigation }) => {
             host_id: user.id,
             title,
             location,
-            date: `${date} - ${time}`, // Junta data e hora numa string simples por enquanto
+            date: finalDateString, // Salva formatado
             level,
             mode,
-            image_url: 'https://images.unsplash.com/photo-1622163642998-1ea36b1ad565?q=80', // Imagem padrão
+            image_url: 'https://images.unsplash.com/photo-1622163642998-1ea36b1ad565?q=80',
           }
         ])
         .select() 
@@ -52,7 +83,7 @@ const CreateGameScreen = ({ navigation }) => {
 
       if (gameError) throw gameError;
 
-      // 3. Lógica Condicional: Se o usuário marcou que VAI JOGAR, insere na lista
+      // 3. Se o host vai jogar
       if (isParticipating) {
          const { error: participantError } = await supabase
             .from('game_participants')
@@ -67,16 +98,12 @@ const CreateGameScreen = ({ navigation }) => {
          if (participantError) throw participantError;
       }
 
-      // 4. Sucesso!
       Alert.alert("Sucesso", "Jogo criado com sucesso! 🎾");
       
-      // Limpa os campos
       setTitle('');
       setLocation('');
-      setDate('');
-      setTime('');
+      setDate(new Date()); // Reseta para hoje
       
-      // Volta para a Home e atualiza
       navigation.navigate('HomeTab');
 
     } catch (error) {
@@ -114,35 +141,59 @@ const CreateGameScreen = ({ navigation }) => {
              <View className="flex-row items-center bg-surface-dark rounded-xl border border-white/10 px-4">
                 <MaterialIcons name="location-on" size={20} color="#8c8b5f" />
                 <TextInput 
-                    value={location}
-                    onChangeText={setLocation}
-                    placeholder="Ex: Clube Pinheiros - Quadra 3"
-                    placeholderTextColor="#666"
-                    className="flex-1 text-white p-4 font-medium"
+                   value={location}
+                   onChangeText={setLocation}
+                   placeholder="Ex: Clube Pinheiros - Quadra 3"
+                   placeholderTextColor="#666"
+                   className="flex-1 text-white p-4 font-medium"
                 />
              </View>
           </View>
 
-          {/* Data e Hora (Simples) */}
+          {/* --- DATA E HORA COM PICKERS --- */}
           <View className="flex-row gap-4 mb-6">
+             
+             {/* DATA */}
              <View className="flex-1">
                 <Text className="text-gray-400 text-xs uppercase font-bold mb-2">Data</Text>
-                <TextInput 
-                    value={date}
-                    onChangeText={setDate}
-                    placeholder="DD/MM"
-                    placeholderTextColor="#666"
-                    className="bg-surface-dark text-white p-4 rounded-xl border border-white/10 font-medium text-center"
+                <TouchableOpacity 
+                   onPress={showDatePicker}
+                   className="bg-surface-dark border border-white/10 rounded-xl p-4 flex-row items-center justify-center active:bg-gray-800"
+                >
+                   <MaterialIcons name="calendar-today" size={20} color="#f9f506" />
+                   <Text className="text-white font-bold ml-2">{formatDateVisual(date)}</Text>
+                </TouchableOpacity>
+                <DateTimePickerModal
+                   isVisible={isDatePickerVisible}
+                   mode="date"
+                   onConfirm={handleConfirmDate}
+                   onCancel={hideDatePicker}
+                   minimumDate={new Date()}
+                   locale="pt_BR"
+                   confirmTextIOS="Confirmar"
+                   cancelTextIOS="Cancelar"
                 />
              </View>
+
+             {/* HORA */}
              <View className="flex-1">
                 <Text className="text-gray-400 text-xs uppercase font-bold mb-2">Horário</Text>
-                <TextInput 
-                    value={time}
-                    onChangeText={setTime}
-                    placeholder="HH:MM"
-                    placeholderTextColor="#666"
-                    className="bg-surface-dark text-white p-4 rounded-xl border border-white/10 font-medium text-center"
+                <TouchableOpacity 
+                   onPress={showTimePicker}
+                   className="bg-surface-dark border border-white/10 rounded-xl p-4 flex-row items-center justify-center active:bg-gray-800"
+                >
+                   <MaterialIcons name="schedule" size={20} color="#f9f506" />
+                   <Text className="text-white font-bold ml-2">{formatTimeVisual(time)}</Text>
+                </TouchableOpacity>
+                <DateTimePickerModal
+                   isVisible={isTimePickerVisible}
+                   mode="time"
+                   onConfirm={handleConfirmTime}
+                   onCancel={hideTimePicker}
+                   locale="pt_BR"
+                   is24Hour
+                   confirmTextIOS="Confirmar"
+                   cancelTextIOS="Cancelar"
                 />
              </View>
           </View>
@@ -168,7 +219,7 @@ const CreateGameScreen = ({ navigation }) => {
              </View>
           </View>
 
-          {/* --- NOVO: OPÇÃO DE PARTICIPAÇÃO --- */}
+          {/* OPÇÃO DE PARTICIPAÇÃO (MANTIDA) */}
           <View className="mb-6 bg-surface-dark p-4 rounded-xl border border-white/10 flex-row items-center justify-between">
               <View className="flex-1 mr-4">
                   <Text className="text-white font-bold text-base">Eu vou jogar</Text>

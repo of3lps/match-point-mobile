@@ -2,19 +2,39 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Alert, Image } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import DateTimePickerModal from "react-native-modal-datetime-picker"; // <--- BIBLIOTECA NOVA
 
 const ManageGameScreen = ({ route, navigation }) => {
   const { gameId } = route.params;
   
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
-  const [dateString, setDateString] = useState(''); // Vamos tratar como string simples pra facilitar
-  const [participants, setParticipants] = useState([]);
   
+  // --- ESTADOS DE DATA (OBJETOS DATE) ---
+  const [date, setDate] = useState(new Date());
+  const [time, setTime] = useState(new Date());
+  const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
+  const [isTimePickerVisible, setTimePickerVisibility] = useState(false);
+  // --------------------------------------
+
+  const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Carrega dados do jogo e participantes
+  // Função para transformar "DD/MM/YYYY - HH:mm" em Objeto Date
+  const parseCustomDate = (dateString) => {
+    if (!dateString) return new Date();
+    try {
+        const [datePart, timePart] = dateString.split(' - '); 
+        if (!datePart) return new Date();
+        const [day, month, year] = datePart.split('/'); 
+        const [hour, minute] = timePart ? timePart.split(':') : [0, 0];
+        // Ano default se não existir na string antiga
+        const fullYear = year && year.length === 4 ? year : new Date().getFullYear();
+        return new Date(fullYear, month - 1, day, hour || 0, minute || 0);
+    } catch (e) { return new Date(); }
+  };
+
   useEffect(() => {
     fetchGameDetails();
   }, []);
@@ -32,7 +52,11 @@ const ManageGameScreen = ({ route, navigation }) => {
 
       setTitle(game.title);
       setLocation(game.location);
-      setDateString(game.date);
+      
+      // Converte a string do banco para os pickers
+      const parsedDate = parseCustomDate(game.date);
+      setDate(parsedDate);
+      setTime(parsedDate);
 
       // 2. Pega participantes
       const { data: parts, error: partError } = await supabase
@@ -51,23 +75,44 @@ const ManageGameScreen = ({ route, navigation }) => {
     }
   };
 
+  // --- HANDLERS DOS PICKERS ---
+  const showDatePicker = () => setDatePickerVisibility(true);
+  const hideDatePicker = () => setDatePickerVisibility(false);
+  const handleConfirmDate = (selectedDate) => { setDate(selectedDate); hideDatePicker(); };
+
+  const showTimePicker = () => setTimePickerVisibility(true);
+  const hideTimePicker = () => setTimePickerVisibility(false);
+  const handleConfirmTime = (selectedTime) => { setTime(selectedTime); hideTimePicker(); };
+  
+  const formatDateVisual = (d) => d.toLocaleDateString('pt-BR');
+  const formatTimeVisual = (d) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
   const handleUpdate = async () => {
-    if (!title || !location || !dateString) return Alert.alert("Erro", "Preencha todos os campos");
+    if (!title || !location) return Alert.alert("Erro", "Preencha todos os campos");
     
     setSaving(true);
     try {
+      // Reconstrói a string para salvar
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
+      const hours = time.getHours().toString().padStart(2, '0');
+      const minutes = time.getMinutes().toString().padStart(2, '0');
+      
+      const finalDateString = `${day}/${month}/${year} - ${hours}:${minutes}`;
+
       const { error } = await supabase
         .from('games')
         .update({
           title,
           location,
-          date: dateString,
+          date: finalDateString,
         })
         .eq('id', gameId);
 
       if (error) throw error;
       Alert.alert("Sucesso", "Jogo atualizado!");
-      navigation.goBack(); // Volta para os detalhes
+      navigation.goBack();
 
     } catch (error) {
       Alert.alert("Erro ao atualizar", error.message);
@@ -95,10 +140,8 @@ const ManageGameScreen = ({ route, navigation }) => {
               
               if (error) throw error;
               
-              // Atualiza a lista local removendo o item
               setParticipants(prev => prev.filter(p => p.user_id !== userId));
               Alert.alert("Removido", `${userName} saiu do jogo.`);
-
             } catch (e) {
               Alert.alert("Erro", e.message);
             }
@@ -149,24 +192,36 @@ const ManageGameScreen = ({ route, navigation }) => {
              />
           </View>
 
-          <View className="mb-8">
-             <Text className="text-gray-400 text-xs mb-2">Data e Hora (Texto)</Text>
-             <TextInput 
-                value={dateString}
-                onChangeText={setDateString}
-                className="bg-surface-dark text-white p-4 rounded-xl border border-white/10"
-             />
+          {/* DATAS E HORAS COM PICKER */}
+          <View className="flex-row gap-4 mb-8">
+              <View className="flex-1">
+                 <Text className="text-gray-400 text-xs font-bold mb-2">Data</Text>
+                 <TouchableOpacity onPress={showDatePicker} className="bg-surface-dark border border-white/10 rounded-xl p-4 flex-row items-center justify-center">
+                    <MaterialIcons name="calendar-today" size={20} color="#f9f506" />
+                    <Text className="text-white font-bold ml-2">{formatDateVisual(date)}</Text>
+                 </TouchableOpacity>
+                 <DateTimePickerModal isVisible={isDatePickerVisible} mode="date" onConfirm={handleConfirmDate} onCancel={hideDatePicker} locale="pt_BR" confirmTextIOS="Confirmar" cancelTextIOS="Cancelar" />
+              </View>
+
+              <View className="flex-1">
+                 <Text className="text-gray-400 text-xs font-bold mb-2">Horário</Text>
+                 <TouchableOpacity onPress={showTimePicker} className="bg-surface-dark border border-white/10 rounded-xl p-4 flex-row items-center justify-center">
+                    <MaterialIcons name="schedule" size={20} color="#f9f506" />
+                    <Text className="text-white font-bold ml-2">{formatTimeVisual(time)}</Text>
+                 </TouchableOpacity>
+                 <DateTimePickerModal isVisible={isTimePickerVisible} mode="time" onConfirm={handleConfirmTime} onCancel={hideTimePicker} locale="pt_BR" is24Hour confirmTextIOS="Confirmar" cancelTextIOS="Cancelar" />
+              </View>
           </View>
 
-          {/* Seção de Jogadores */}
+          {/* Seção de Jogadores (MANTIDA IGUAL) */}
           <Text className="text-primary font-bold mb-4 text-sm uppercase">Gerenciar Jogadores ({participants.length})</Text>
           
           {participants.map((p) => (
              <View key={p.id} className="flex-row items-center justify-between bg-surface-dark p-3 rounded-xl mb-3 border border-white/5">
                 <View className="flex-row items-center flex-1">
                    <Image 
-                     source={{ uri: `https://api.dicebear.com/7.x/initials/png?seed=${p.profiles?.full_name || 'U'}` }} 
-                     className="w-10 h-10 rounded-full bg-gray-600" 
+                      source={{ uri: `https://api.dicebear.com/7.x/initials/png?seed=${p.profiles?.full_name || 'U'}` }} 
+                      className="w-10 h-10 rounded-full bg-gray-600" 
                    />
                    <Text className="text-white ml-3 font-bold" numberOfLines={1}>{p.profiles?.full_name}</Text>
                 </View>
